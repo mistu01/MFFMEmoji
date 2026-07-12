@@ -12,6 +12,7 @@ DATA_FONT_PATHS_FILE="$STATE_DIR/data-font-paths.list"
 RUN_DATA_FONT_PATHS_FILE="$STATE_DIR/data-font-paths.run"
 TOUCHED_PACKAGES_FILE="$STATE_DIR/touched-packages.list"
 RUN_TOUCHED_PACKAGES_FILE="$STATE_DIR/touched-packages.run"
+FORCE_STOPPED_PACKAGES_FILE="$STATE_DIR/force-stopped-packages.list"
 LEGACY_DATA_FONT_BACKUP_DIR="$STATE_DIR/data-font-backups"
 LEGACY_DATA_FONT_BACKUP_MANIFEST="$STATE_DIR/data-font-backups.list"
 PACKAGE_SNAPSHOT_FILE="$STATE_DIR/packages.snapshot"
@@ -617,6 +618,21 @@ register_touched_package() {
   esac
 }
 
+package_was_force_stopped() {
+  local package_name="$1"
+
+  [ -n "$package_name" ] || return 1
+  [ -f "$FORCE_STOPPED_PACKAGES_FILE" ] || return 1
+  grep -Fxq "$package_name" "$FORCE_STOPPED_PACKAGES_FILE" 2>/dev/null
+}
+
+remember_force_stopped_package() {
+  local package_name="$1"
+
+  [ -n "$package_name" ] || return 0
+  append_unique_line "$FORCE_STOPPED_PACKAGES_FILE" "$package_name"
+}
+
 package_version_token() {
   local package_name="$1"
   local version_code
@@ -799,6 +815,7 @@ restore_saved_data_font_overrides() {
 clear_package_cache() {
   local package_name="$1"
   local cache_dir
+  local force_stop_mode="first-only"
 
   if [ "$EXECUTION_CONTEXT" = "install" ]; then
     trace_log "Cache cleanup skipped during install context: $package_name"
@@ -827,7 +844,22 @@ clear_package_cache() {
     return 0
   fi
 
+  # Uninstall restore always force-stops so apps reload original fonts.
+  # Runtime repairs force-stop only on the first cleanup for each package;
+  # later scans still replace fonts and clear caches without killing apps.
+  if [ "$EXECUTION_CONTEXT" = "uninstall" ]; then
+    force_stop_mode="always"
+  elif package_was_force_stopped "$package_name"; then
+    append_log "INFO: Cleared cache for $package_name without force-stop (already force-stopped once)"
+    trace_log "Skipped force-stop; package already force-stopped on an earlier attempt: $package_name"
+    return 0
+  fi
+
   am force-stop "$package_name" >/dev/null 2>&1
+  if [ "$force_stop_mode" = "first-only" ]; then
+    remember_force_stopped_package "$package_name"
+  fi
+  append_log "INFO: Force-stopped package after cleanup: $package_name"
   trace_log "Force-stopped package after cleanup: $package_name"
 }
 

@@ -1,0 +1,7 @@
+# One-shot full rebuild marker.
+#
+# While this file exists, the Build and Release workflow builds modules for
+# every .ttf under Files/ on push (same as manual workflow_dispatch).
+#
+# After the full rebuild release succeeds, delete this file and push so future
+# commits return to the normal "only new/renamed font files" behavior.

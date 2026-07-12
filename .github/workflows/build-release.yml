@@ -8,6 +8,8 @@ on:
     paths:
       - "Files/**/*.ttf"
       - "Files/*.ttf"
+      # One-shot full rebuild marker; remove after the next all-fonts release.
+      - ".github/force-build-all-once"
   workflow_dispatch:
 
 permissions:
@@ -36,7 +38,16 @@ jobs:
           mkdir -p build
           : > build/font-files.txt
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # Build every font when:
+          # - manual workflow_dispatch, or
+          # - the one-shot marker .github/force-build-all-once is present
+          # Otherwise keep the default: only newly added/renamed fonts.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ -f .github/force-build-all-once ]; then
+            if [ -f .github/force-build-all-once ]; then
+              echo "One-shot force-build-all-once marker present; building all fonts from Files/"
+            else
+              echo "Manual workflow_dispatch; building all fonts from Files/"
+            fi
             find Files -type f -iname '*.ttf' | sort > build/font-files.txt
           else
             before="${{ github.event.before }}"
@@ -230,4 +241,7 @@ jobs:
       - name: Skip release
         if: steps.fonts.outputs.should_build != 'true'
         shell: bash
-        run: echo "No new or renamed font files were found under Files; skipping release."
+        run: |
+          echo "No fonts selected for build; skipping release."
+          echo "Default push builds only new/renamed Files/*.ttf."
+          echo "Full rebuilds: workflow_dispatch, or temporary .github/force-build-all-once marker."
