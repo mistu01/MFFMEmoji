@@ -6,8 +6,7 @@ on:
       - main
       - master
     paths:
-      - "Files/**/*.ttf"
-      - "Files/*.ttf"
+      - "Files/**"
       # One-shot full rebuild marker; remove after the next all-fonts release.
       - ".github/force-build-all-once"
       - ".github/workflows/build-release.yml"
@@ -49,22 +48,22 @@ jobs:
             else
               echo "Manual workflow_dispatch; building all fonts from Files/"
             fi
-            find Files -type f -iname '*.ttf' | sort > build/font-files.txt
+            find Files -type f \( -iname '*.ttf' -o -iname '*.otf' \) | sort > build/font-files.txt
           else
             before="${{ github.event.before }}"
             after="${{ github.sha }}"
             diff_base="$before"
 
-            if [ "$before" = "0000000000000000000000000000000000000000" ]; then
-              diff_base="$(git rev-list --max-parents=0 "$after")"
+            if [ -z "$before" ] || [ "$before" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "${before}^{commit}" 2>/dev/null; then
+              diff_base="$(git rev-parse "${after}~1" 2>/dev/null || git rev-list --max-parents=0 "$after")"
             fi
 
             while IFS=$'\t' read -r status first_path second_path; do
               case "$status" in
-                A*|M*)
+                A*|M*|T*)
                   font_path="$first_path"
                   ;;
-                R*)
+                R*|C*)
                   font_path="$second_path"
                   ;;
                 *)
@@ -72,10 +71,14 @@ jobs:
                   ;;
               esac
 
-              if [ -f "$font_path" ]; then
-                printf '%s\n' "$font_path" >> build/font-files.txt
-              fi
-            done < <(git diff --name-status --find-renames "$diff_base" "$after" -- 'Files/*.ttf' 'Files/**/*.ttf')
+              case "$font_path" in
+                Files/*.ttf|Files/**/*.ttf|Files/*.TTF|Files/**/*.TTF|Files/*.otf|Files/**/*.otf|Files/*.OTF|Files/**/*.OTF)
+                  if [ -f "$font_path" ]; then
+                    printf '%s\n' "$font_path" >> build/font-files.txt
+                  fi
+                  ;;
+              esac
+            done < <(git -c core.quotepath=false diff --name-status --find-renames "$diff_base" "$after" -- 'Files')
 
             sort -u build/font-files.txt -o build/font-files.txt
           fi
